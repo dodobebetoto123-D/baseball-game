@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   Activity, ArrowRight, Award, BarChart3, ChevronRight, CircleDollarSign,
   ClipboardList, Flame, Gift, Home, LayoutGrid, Menu, PackageOpen, Play,
@@ -35,6 +35,9 @@ function App() {
   const [inning, setInning] = useState(1)
   const [score, setScore] = useState({ home: 0, away: 0 })
   const [feed, setFeed] = useState(['경기일입니다. 선수단이 출격을 준비했습니다.'])
+  const [pitching, setPitching] = useState(false)
+  const [pitchProgress, setPitchProgress] = useState(0)
+  const [atBatResult, setAtBatResult] = useState('투수가 공을 준비하고 있습니다.')
 
   const notify = (message: string) => {
     setToast(message)
@@ -43,13 +46,51 @@ function App() {
   const teamOvr = useMemo(() => Math.round(lineup.reduce((sum, p) => sum + p.ovr, 0) / lineup.length), [lineup])
 
   const playAtBat = () => {
-    const outcomes = ['마일로가 좌중간을 가르는 2루타!', '주노가 빠른 공을 받아쳤습니다 — 홈런!', '날카로운 슬라이더에 타자가 얼어붙습니다.', '올리가 침착하게 볼넷을 골라냅니다.', '테스가 펜스 앞에서 멋진 수비를 보여줍니다.']
-    const outcome = outcomes[Math.floor(Math.random() * outcomes.length)]
-    const scores = outcome.includes('gone') || outcome.includes('double')
-    if (scores) setScore((s) => ({ ...s, home: s.home + (outcome.includes('gone') ? 2 : 1) }))
+    if (pitching) return
+    setPitching(true)
+    setPitchProgress(0)
+    setAtBatResult('공이 날아옵니다! 타이밍을 맞춰 스윙하세요.')
+  }
+
+  const swing = () => {
+    if (!pitching) return
+    const distance = Math.abs(pitchProgress - 58)
+    const outcome = distance < 9 ? '마일로가 가운데로 받아쳤습니다 — 홈런!' : distance < 20 ? '마일로가 우전 안타를 만들어냅니다!' : distance < 34 ? '마일로가 파울을 걷어냅니다.' : '헛스윙 삼진! 타이밍이 늦었습니다.'
+    const runs = outcome.includes('홈런') ? 2 : outcome.includes('안타') ? 1 : 0
+    if (runs) setScore((s) => ({ ...s, home: s.home + runs }))
     setFeed((items) => [`${inning}.0 · ${outcome}`, ...items].slice(0, 5))
+    setAtBatResult(outcome)
+    setPitching(false)
+    setPitchProgress(0)
     setInning((value) => value >= 9 ? 1 : value + 1)
   }
+
+  useEffect(() => {
+    if (!pitching) return
+    const timer = window.setInterval(() => {
+      setPitchProgress((value) => {
+        if (value >= 100) {
+          setPitching(false)
+          setAtBatResult('스트라이크! 공을 놓쳤습니다.')
+          setFeed((items) => [`${inning}.0 · 스트라이크! 공을 놓쳤습니다.`, ...items].slice(0, 5))
+          return 0
+        }
+        return value + 4
+      })
+    }, 90)
+    return () => window.clearInterval(timer)
+  }, [pitching, inning])
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.code === 'Space') {
+        event.preventDefault()
+        swing()
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  })
 
   return (
     <div className="app-shell">
@@ -68,7 +109,7 @@ function App() {
           {view === 'dashboard' && <Dashboard onNavigate={setView} onNotify={notify} teamOvr={teamOvr} />}
           {view === 'roster' && <Roster lineup={lineup} setLineup={setLineup} onNotify={notify} />}
           {view === 'packs' && <Packs selectedPack={selectedPack} setSelectedPack={setSelectedPack} onNotify={notify} />}
-          {view === 'match' && <Match inning={inning} score={score} feed={feed} playAtBat={playAtBat} onNotify={notify} />}
+          {view === 'match' && <Match inning={inning} score={score} feed={feed} playAtBat={playAtBat} swing={swing} pitching={pitching} pitchProgress={pitchProgress} atBatResult={atBatResult} onNotify={notify} />}
         </div>
       </main>
       {toast && <div className="toast"><Zap size={17} />{toast}</div>}
@@ -101,8 +142,8 @@ function Packs({ selectedPack, setSelectedPack, onNotify }: { selectedPack: stri
   return <div className="page"><div className="page-heading"><div><p className="eyebrow">THE MARKET · 12 AVAILABLE</p><h1>카드 마켓</h1><p className="subhead">Build a deeper club with a little patience and a lot of luck.</p></div><div className="wallet"><CircleDollarSign size={17} /> 2,480 <span>◆</span> 94</div></div><div className="market-note"><Sparkles size={18} /><div><strong>??? ??? ???????</strong><span>?? ?? 6?? ??????. ?? ???? 18:42:09???.</span></div><button className="text-button">?? ?? <ArrowRight size={14} /></button></div><div className="pack-grid">{packs.map((p) => <button className={`pack-card ${selectedPack === p.name ? 'selected' : ''}`} key={p.name} onClick={() => setSelectedPack(p.name)}><div className={`pack-art ${p.color}`}><span>{p.icon}</span><i>DD</i></div><div className="pack-copy"><div className="pack-title"><h3>{p.name}</h3><span className="pack-cards">{p.cards}</span></div><p>{p.desc}</p><div className="pack-buy"><b>{p.price === 'Free' ? p.price : `◉ ${p.price}`}</b><span>{selectedPack === p.name ? 'Selected' : 'ud329 열기'} <ArrowRight size={14} /></span></div></div></button>)}</div>{selectedPack && <div className="opening-panel"><div><span className="eyebrow">?? ?? ??</span><h2>{selectedPack} ? ???</h2><p>?? ??? ??? ???? ?? ????.</p></div><button className="primary-button" onClick={() => { onNotify('Pack opened — 마일로 레이스 joined your collection!'); setSelectedPack(null) }}>ud329 열기 <PackageOpen size={16} /></button></div>}<div className="section-row"><h3>최근 획득 카드</h3><button className="text-button" onClick={() => onNotify('Collection view coming soon')}>컬렉션 보기 <ArrowRight size={14} /></button></div><div className="pulls"><div className="pull-card"><span className="rare">RARE</span><strong>Vera Bloom</strong><small>SP · 79 OVR</small><i>♢</i></div><div className="pull-card gold"><span className="rare">EPIC</span><strong>Hugo Finch</strong><small>CL · 87 OVR</small><i>✦</i></div><div className="pull-card mint-card"><span className="rare">UNCOMMON</span><strong>Team spark</strong><small>????? boost</small><i>✚</i></div></div></div>
 }
 
-function Match({ inning, score, feed, playAtBat, onNotify }: { inning: number; score: { home: number; away: number }; feed: string[]; playAtBat: () => void; onNotify: (s: string) => void }) {
-  return <div className="page match-page"><div className="page-heading"><div><p className="eyebrow">MATCH ROOM · REGULAR SEASON</p><h1>파이어플라이 <span className="versus">vs</span> 코메츠</h1><p className="subhead">????? Park · Clear skies · 72°F</p></div><span className="live-pill"><i /> 실시간 시뮬레이션</span></div><div className="scoreboard"><div className="team-score"><span className="team-badge firefly">✦</span><div><small>?</small><strong>파이어플라이</strong></div><b>{score.home}</b></div><div className="inning"><span>?</span><strong>{inning}</strong><small>??</small></div><div className="team-score away"><b>{score.away}</b><div><small>??</small><strong>코메츠</strong></div><span className="team-badge comet">☄</span></div></div><div className="match-columns"><section className="panel field-panel"><div className="panel-heading"><div><span className="eyebrow">현재 타석</span><h3>마일로 레이스 · 0–1</h3></div><span className="count"><i /><i className="dim" /><i className="dim" /> 1??</span></div><div className="diamond"><div className="base b2" /><div className="base b1" /><div className="base b3" /><div className="base home" /><div className="pitch-dot">⚾</div></div><div className="field-controls"><button className="primary-button" onClick={playAtBat}><Play size={16} fill="currentColor" /> 타석 진행</button><button className="ghost-button" onClick={() => onNotify('?? ??? ?????')}>작전 설정 <ClipboardList size={15} /></button></div></section><section className="panel play-feed"><div className="panel-heading"><div><span className="eyebrow">플레이 로그</span><h3>경기 로그</h3></div><Activity size={17} /></div>{feed.map((item, i) => <div className={`play-item ${i === 0 ? 'latest' : ''}`} key={`${item}-${i}`}><span className="play-dot" /> <span>{item}</span></div>)}</section></div><div className="match-bottom"><div><span className="eyebrow">승리 확률</span><div className="probability"><strong>64%</strong><span>파이어플라이</span><div className="progress"><i style={{ width: '64%' }} /></div></div></div><div className="match-stats"><span>안타 <b>5</b></span><span>실책 <b>0</b></span><span>투구 수 <b>42</b></span></div></div></div>
+function Match({ inning, score, feed, playAtBat, swing, pitching, pitchProgress, atBatResult, onNotify }: { inning: number; score: { home: number; away: number }; feed: string[]; playAtBat: () => void; swing: () => void; pitching: boolean; pitchProgress: number; atBatResult: string; onNotify: (s: string) => void }) {
+  return <div className="page match-page"><div className="page-heading"><div><p className="eyebrow">MATCH ROOM · REGULAR SEASON</p><h1>파이어플라이 <span className="versus">vs</span> 코메츠</h1><p className="subhead">????? Park · Clear skies · 72°F</p></div><span className="live-pill"><i /> 실시간 시뮬레이션</span></div><div className="scoreboard"><div className="team-score"><span className="team-badge firefly">✦</span><div><small>?</small><strong>파이어플라이</strong></div><b>{score.home}</b></div><div className="inning"><span>?</span><strong>{inning}</strong><small>??</small></div><div className="team-score away"><b>{score.away}</b><div><small>??</small><strong>코메츠</strong></div><span className="team-badge comet">☄</span></div></div><div className="match-columns"><section className="panel field-panel"><div className="panel-heading"><div><span className="eyebrow">현재 타석</span><h3>마일로 레이스 · 0–1</h3></div><span className="count"><i /><i className="dim" /><i className="dim" /> 1??</span></div>  <div className="diamond"><div className="base b2" /><div className="base b1" /><div className="base b3" /><div className="base home" /><div className="pitch-dot" style={{ left: `${18 + pitchProgress * 0.65}%` }}>⚾</div></div><p className="at-bat-result">{atBatResult}</p><div className="timing-meter"><i className="perfect-zone" /><i className="timing-cursor" style={{ left: `${pitchProgress}%` }} /></div><div className="field-controls"><button className="primary-button" onClick={pitching ? swing : playAtBat}><Play size={16} fill="currentColor" /> {pitching ? '스윙! (Space)' : '투구 시작'}</button><button className="ghost-button" onClick={() => onNotify('작전 보드를 열었습니다')}>작전 설정 <ClipboardList size={15} /></button></div></section><section className="panel play-feed"><div className="panel-heading"><div><span className="eyebrow">플레이 로그</span><h3>경기 로그</h3></div><Activity size={17} /></div>{feed.map((item, i) => <div className={`play-item ${i === 0 ? 'latest' : ''}`} key={`${item}-${i}`}><span className="play-dot" /> <span>{item}</span></div>)}</section></div><div className="match-bottom"><div><span className="eyebrow">승리 확률</span><div className="probability"><strong>64%</strong><span>파이어플라이</span><div className="progress"><i style={{ width: '64%' }} /></div></div></div><div className="match-stats"><span>안타 <b>5</b></span><span>실책 <b>0</b></span><span>투구 수 <b>42</b></span></div></div></div>
 }
 
 export default App
